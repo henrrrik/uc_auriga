@@ -1,0 +1,6 @@
+; $Id: uc_auriga.info,v 1.2 2009/04/05 20:41:29 henrrrik Exp $
+name = Auriga e-Payment (Posten Betalväxel) Payment Method
+description = Provides a payment method for Auriga e-Payment (Posten Betalväxel).
+dependencies[] = uc_payment
+package = Ubercart - payment
+core = 6.x

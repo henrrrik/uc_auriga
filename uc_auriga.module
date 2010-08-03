@@ -1,0 +1,261 @@
+<?php
+// $Id: uc_auriga.module,v 1.3 2009/04/09 11:24:35 henrrrik Exp $
+
+/**
+ * @file
+ * Provides Ubercart support for the Auriga e-Payment (Posten Betalväxel) payment gateway
+ *
+ * 
+ */
+
+
+/**
+ * Implementation of hook_menu().
+ */
+function uc_auriga_menu() {
+  $items['cart/auriga/complete'] = array(
+    'title' => t('Order complete'),
+    'page callback' => 'uc_auriga_complete',
+    'access callback' => 'uc_auriga_completion_access',
+    'type' => MENU_CALLBACK,
+    'file' => 'uc_auriga.pages.inc',
+  );
+  $items['cart/auriga/finalize'] = array(
+    'title' => t('Order complete'),
+    'page callback' => 'uc_auriga_finalize',
+    'access callback' => 'uc_auriga_completion_access',
+    'type' => MENU_CALLBACK,
+    'file' => 'uc_auriga.pages.inc',
+  );
+
+  return $items;
+}
+
+
+/**
+ * Implementation of hook_payment_method().
+ */
+function uc_auriga_payment_method() {
+  $methods[] = array(
+    'id' => 'auriga',
+    'name' => 'Visa/Mastercard',
+    'title' => 'Visa/Mastercard',
+    'desc' => t('Pay with Visa or Mastercard'),
+    'callback' => 'uc_auriga',
+    'weight' => 3,
+    'checkout' => TRUE,
+    'no_gateway' => TRUE,
+  );
+  return $methods;
+}
+
+/**
+ * Handle the contact payment method.
+ */
+function uc_auriga($op, &$arg1) {
+  switch ($op) {
+    case 'cart-details':
+    case 'customer-view':
+      $details = NULL;
+      return $details;
+    case 'order-view':
+      return '';
+    case 'cart-process':
+      $_SESSION['pay_method'] = $_POST['pay_method'];
+      return;
+    case 'settings':
+      return '';
+  }
+}
+
+/**
+ * Implementation of hook_order().
+ */
+function uc_auriga_order($op, &$arg1) {
+  switch ($op) {
+    case 'save':
+      if ($arg1->payment_method == 'auriga') {
+        // do something
+      }
+      break;
+  }
+}
+
+
+// Make sure the completion pages can always be accessed.
+function uc_auriga_completion_access() {
+  return TRUE;
+}
+
+/**
+ * Implementation of hook_payment_gateway().
+ */
+function uc_auriga_payment_gateway() {
+  $gateways[] = array(
+    'id' => 'auriga',
+    'title' => t('Auriga e-Payment'),
+    'description' => t('Process credit card payments using Auriga e-Payment (Posten Betalväxel)'),
+    'settings' => 'uc_auriga_settings_form',
+    'credit' => 'uc_auriga_charge',
+    'credit_txn_types' => array(UC_CREDIT_AUTH_ONLY, UC_CREDIT_PRIOR_AUTH_CAPTURE, UC_CREDIT_AUTH_CAPTURE),
+  );
+
+  return $gateways;
+}
+
+
+/**
+ * Callback for payment gateway settings.
+ */
+function uc_auriga_settings_form() {
+
+  $form['auriga'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Auriga e-Payment Merchant Information'),
+    '#description' => t('This information is required for Ubercart to interact with your payment gateway account.'),
+  );
+  $form['auriga']['uc_auriga_merchant_id'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Merchant ID'),
+    '#default_value' => variable_get('uc_auriga_merchant_id', ''),
+  );
+  $form['auriga']['uc_auriga_secret_word'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Secret word'),
+    '#default_value' => variable_get('uc_auriga_secret_word', ''),
+  );
+
+  $form['uc_auriga_test'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Enable testing mode, allowing you to process fake orders for testing purposes.'),
+    '#default_value' => variable_get('uc_auriga_test', TRUE),
+  );
+  $form['uc_auriga_language'] = array(
+    '#type' => 'select',
+    '#title' => t('Language preference'),
+    '#description' => t('Adjust language on Auriga e-Payment pages.'),
+    '#options' => array(
+      'SWE' => t('Swedish'),
+      'ENG' => t('English'),
+    ),
+    '#default_value' => variable_get('uc_auriga_language', 'SWE'),
+  );
+
+  $form['uc_auriga_currency'] = array(
+    '#type' => 'select',
+    '#title' => t('Currency'),
+    '#description' => t('Select the currency to be used.'),
+    '#options' => array(
+      'SEK' => t('Swedish Krona'),
+      'DKK' => t('Danish Krona'),
+      'NOK' => t('Norwegian Krona'),
+      'EUR' => t('Euro'),
+      'USD' => t('US Dollar'),
+    ),
+    '#default_value' => variable_get('uc_auriga_currency', 'SEK'),
+  );
+
+  return $form;
+}
+
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function uc_auriga_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'uc_cart_checkout_review_form' && ($order_id = intval($_SESSION['cart_order'])) > 0) {
+    $order = uc_order_load($order_id);
+
+    if ($order->payment_method == 'auriga') {
+      unset($form['submit']);
+      $form['#prefix'] = '<table style="display: inline; padding-top: 1em;"><tr><td>';
+      $form['#suffix'] = '</td><td>'. drupal_get_form('uc_auriga_form', $order) .'</td></tr></table>';
+    }
+  }
+}
+
+function uc_auriga_form($form_state, $order) {
+
+  $data = array(
+    'Merchant_id' => variable_get('uc_auriga_merchant_id', ''),
+    'Version' => 2,
+    'Customer_refno' => $order->order_id,
+    'Currency' => variable_get('uc_auriga_currency', 'SEK'),
+    'VAT' => 0,
+    'Payment_method' => 'KORTINSE',
+    'Response_URL' => url('cart/auriga/complete/'. uc_cart_get_id(), array('absolute' => TRUE)),
+    'Cancel_URL' => url('<front>', array('absolute' => TRUE)),
+    'Goods_description' => '',
+    'Language' => variable_get('uc_auriga_language', 'SWE'),
+    'Comment' => '',
+    'Country' => 'SE', // Delivery
+    'MAC' => NULL,
+  );
+  
+
+  // Compile total amount
+  foreach ($order->line_items as $item) {
+    $amount = $amount + $item['amount'];
+  }
+  $data['Amount'] = ($amount * 100); // Auriga wants the amount in ören/cents
+
+  if (variable_get('uc_auriga_test', TRUE)) { 
+    $data['Amount'] = 50001; // Testing mode uses price intervals to trigger status codes. This gives us an "A 0" successful payment.
+  }
+  
+  // Generate hash for MAC
+  $mac_input = $data['Merchant_id'] .
+    $data['Version'] .
+    $data['Customer_refno'] .
+    $data['Currency'] .
+    $data['Amount'] .
+    $data['VAT'] .
+    $data['Payment_method'] .
+    $data['Response_URL'] .
+    $data['Goods_description'] .
+    $data['Language'] .
+    $data['Comment'] . 
+    $data['Country'] .
+    $data['Cancel_URL'];
+
+  $data['MAC'] = md5($mac_input . variable_get('uc_auriga_secret_word', ''));
+  $_SESSION['MAC_'. $order->order_id] = $data['MAC']; // store MAC for verification of the Auriga gateway response.
+
+  if (variable_get('uc_auriga_test', TRUE)) {
+    $form['#action'] = 'https://test-epayment.auriganet.eu/paypagegw';
+  }
+  else {
+    $form['#action'] = 'https://epayment.auriganet.eu/paypagegw'; 
+  }
+
+  foreach ($data as $name => $value) {
+    $form[$name] = array('#type' => 'hidden', '#value' => $value);
+  }
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit Order'),
+  );
+
+  return $form;
+}
+
+/**
+ * Implementation of hook_requirements().
+ */
+function uc_auriga_requirements($phase) {
+  $requirements = array();
+
+  if ($phase == 'runtime') {
+    if (!variable_get('uc_auriga_merchant_id', '') || !variable_get('uc_auriga_secret_word', '')) {
+      $requirements['uc_auriga'] = array(
+        'title' => t('Auriga e-Payment module'),
+        'description' => t('Auriga e-Payment module has not been configured yet. Please configure its settings from the <a href="@url">Payment gateways settings page</a>.', array('@url' => url('admin/store/settings/payment/edit/gateways'))),
+        'severity' => REQUIREMENT_ERROR,
+        'value' => t('Not configured'),
+      );
+    }
+  }
+
+  return $requirements;
+}

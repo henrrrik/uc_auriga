@@ -1,0 +1,21 @@
+<?php
+// $Id: uc_auriga.install,v 1.2 2009/04/05 20:41:29 henrrrik Exp $
+
+/**
+ * @file
+ * Contains install and update functions for uc_auriga.
+ */
+
+function uc_auriga_install() {
+
+}
+
+function uc_auriga_uninstall() {
+  variable_del('uc_auriga_test');
+  variable_del('uc_auriga_merchant_id');
+  variable_del('uc_auriga_secret_word');
+}
+
+
+function uc_auriga_update_1() {
+}
